@@ -181,10 +181,10 @@ const TaxRoll: React.FC<TaxRollProps> = ({ assessments, user, onDataChange }) =>
     if (searchTerm) {
       const lower = searchTerm.toLowerCase();
       data = data.filter(a => 
-        (a.td_Number && a.td_Number.toLowerCase().includes(lower)) ||
-        (a.owner_name && a.owner_name.toLowerCase().includes(lower)) ||
-        (a.lot_No && a.lot_No.toLowerCase().includes(lower)) ||
-        (a.title_No && a.title_No.toLowerCase().includes(lower))
+        (a.td_Number && String(a.td_Number).toLowerCase().includes(lower)) ||
+        (a.owner_name && String(a.owner_name).toLowerCase().includes(lower)) ||
+        (a.lot_No && String(a.lot_No).toLowerCase().includes(lower)) ||
+        (a.title_No && String(a.title_No).toLowerCase().includes(lower))
       );
     }
 
@@ -202,7 +202,7 @@ const TaxRoll: React.FC<TaxRollProps> = ({ assessments, user, onDataChange }) =>
         data = data.filter(a => {
             const s = cleanString(a.td_Status);
             if (selectedStatuses.includes('Taxable') && s === 'taxable') return true;
-            if (selectedStatuses.includes('Exempt') && (s === 'exempt' || s === 'exempted')) return true;
+            if (selectedStatuses.includes('Exempt') && (s === 'exempt' || s === 'exempted') ) return true;
             if (selectedStatuses.includes('Cancelled') && s === 'cancelled') return true;
             if (selectedStatuses.includes('Others')) {
                 if (s !== 'taxable' && s !== 'exempt' && s !== 'exempted' && s !== 'cancelled') return true;
