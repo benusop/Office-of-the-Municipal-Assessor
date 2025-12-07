@@ -1,9 +1,11 @@
+
 import React, { useState } from 'react';
 import { User } from '../types';
 import { 
   FileBadge, ArrowRightLeft, CalendarRange, 
   BarChart3, TrendingUp, Search, Filter, Plus, Download
 } from 'lucide-react';
+import Transactions from './Transactions'; // Imported new component
 
 export type OfficeViewType = 'CERTIFICATION' | 'TRANSACTION' | 'REPORTS';
 
@@ -19,7 +21,8 @@ const OfficeManagement: React.FC<OfficeManagementProps> = ({ user, view }) => {
       case 'CERTIFICATION':
         return <div className="max-w-7xl mx-auto"><TableTemplate title="Certifications Issued" columns={['Date', 'Control No.', 'Requestor', 'Type', 'TD Number', 'OR Number', 'Amount']} /></div>;
       case 'TRANSACTION':
-        return <div className="max-w-7xl mx-auto"><TableTemplate title="Office Transactions" columns={['Date', 'Trans ID', 'Client', 'Transaction Type', 'Status', 'Processor']} /></div>;
+        // Updated to use the new Transactions component
+        return <Transactions user={user} />;
       case 'REPORTS':
         return <div className="max-w-7xl mx-auto"><ReportsHub /></div>;
       default:
@@ -51,7 +54,6 @@ const TableTemplate = ({ title, columns }: { title: string, columns: string[] })
     <div className="p-6 border-b border-gray-200 flex flex-col sm:flex-row justify-between items-center gap-4">
       <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
          {title === 'Certifications Issued' && <FileBadge size={24} className="text-emerald-500"/>}
-         {title === 'Office Transactions' && <ArrowRightLeft size={24} className="text-purple-500"/>}
          {title}
       </h2>
       <div className="flex gap-2 w-full sm:w-auto">

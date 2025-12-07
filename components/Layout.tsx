@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Search, LogIn, LogOut, 
   LayoutDashboard, ScrollText, FilePlus, Info, Shield, LucideIcon, Menu, X, Clock,
@@ -84,6 +84,26 @@ const MobileMenuItem: React.FC<MobileMenuItemProps> = ({ icon: Icon, label, path
   );
 };
 
+const LiveClock = () => {
+  const [date, setDate] = useState(new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => setDate(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  return (
+    <div className="hidden md:flex flex-col items-end mr-6 border-r border-gray-200 pr-6">
+      <div className="text-lg font-bold text-gray-900 font-mono leading-none">
+        {date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+      </div>
+      <div className="text-xs font-bold text-gray-500 uppercase tracking-wide mt-1">
+        {date.toLocaleDateString('en-US', { weekday: 'short', month: 'long', day: 'numeric', year: 'numeric' })}
+      </div>
+    </div>
+  );
+};
+
 const Layout: React.FC<LayoutProps> = ({ 
   children, user, onLoginClick, onLogoutClick, currentPath, onNavigate 
 }) => {
@@ -143,10 +163,14 @@ const Layout: React.FC<LayoutProps> = ({
               </div>
             </div>
 
-            {/* Auth Button & Mobile Menu Toggle */}
+            {/* Right Side: Clock, Auth, Menu */}
             <div className="flex items-center gap-4">
+              
+              {/* Added Live Clock Component */}
+              <LiveClock />
+
               {user ? (
-                <div className="flex items-center gap-3 pl-4 border-l border-gray-200">
+                <div className="flex items-center gap-3 pl-4 md:border-l md:border-gray-200">
                   <div className="text-right hidden sm:block">
                     <p className="text-sm font-bold text-gray-900">{user.name}</p>
                     <p className="text-xs text-emerald-600 font-medium">{user.position}</p>

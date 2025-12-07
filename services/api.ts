@@ -1,5 +1,5 @@
 
-import { Assessment, User, UserRole, DTRRecord, Holiday, VisitorRecord } from '../types';
+import { Assessment, User, UserRole, DTRRecord, Holiday, VisitorRecord, Transaction } from '../types';
 import { STAFF_CREDENTIALS } from '../constants';
 
 // --- CONFIGURATION ---
@@ -16,7 +16,8 @@ const SHEET_NAMES = {
   ASSESSMENTS: 'Assessments', 
   ATTENDANCE: 'Attendance',
   HOLIDAYS: 'Holidays',
-  VISITOR_LOG: 'VisitorLog'
+  VISITOR_LOG: 'VisitorLog',
+  TRANSACTIONS: 'Transactions'
 };
 
 // --- HELPERS ---
@@ -41,7 +42,7 @@ const fetchGoogleScript = async (action: string, sheet: string, data?: any) => {
       url += `?action=read&sheet=${sheet}`;
       options.method = 'GET';
     } else {
-      // POST Request (Create/Update)
+      // POST Request (Create/Update/Delete)
       options.method = 'POST';
       options.body = JSON.stringify({
         action,
@@ -138,8 +139,6 @@ export const getCurrentUser = async (): Promise<User | null> => {
 };
 
 export const updateUserRole = async (userId: string, role: UserRole) => {
-  // In a real app, this would update a database. 
-  // Since auth is constant-based, this is a placeholder for session runtime.
   console.log(`Role update for ${userId} to ${role}`);
   return true;
 };
@@ -209,7 +208,6 @@ export const getDTRLogs = async (): Promise<DTRRecord[]> => {
 };
 
 export const saveDTRRecord = async (record: DTRRecord) => {
-  // We re-fetch to check existence to prevent duplicates if latency is high
   const allRecords = await getDTRLogs();
   const exists = allRecords.find(r => String(r.id) === String(record.id));
 
@@ -243,9 +241,44 @@ export const addVisitorLog = async (visitor: VisitorRecord) => {
 };
 
 export const updateVisitorLog = async (id: string, updates: Partial<VisitorRecord>) => {
-  await fetchGoogleScript('update', SHEET_NAMES.VISITOR_LOG, { ...updates, id });
+  // Ensure ID is a string to prevent numeric misinterpretation by Google Sheets
+  await fetchGoogleScript('update', SHEET_NAMES.VISITOR_LOG, { ...updates, id: String(id) });
 };
 
 export const deleteVisitorLog = async (id: string) => {
-  await fetchGoogleScript('update', SHEET_NAMES.VISITOR_LOG, { id, status: 'DELETED' });
+  // Uses 'delete' action to physically remove row. 
+  // Requires backend to support action='delete' by finding the row with matching ID.
+  await fetchGoogleScript('delete', SHEET_NAMES.VISITOR_LOG, { id: String(id) });
+};
+
+// --- TRANSACTION SERVICES ---
+
+export const getTransactions = async (): Promise<Transaction[]> => {
+  const rawData = await fetchGoogleScript('read', SHEET_NAMES.TRANSACTIONS);
+  if (!Array.isArray(rawData)) return [];
+
+  return rawData.map((item: any) => ({
+    ...item,
+    tags: parseJSON(item.tags, []),
+    updates: parseJSON(item.updates, []),
+    lastUpdated: parseNumber(item.lastUpdated),
+    isDeleted: item.isDeleted === true || item.isDeleted === 'true'
+  }));
+};
+
+export const saveTransaction = async (transaction: Transaction) => {
+  const payload = {
+    ...transaction,
+    tags: JSON.stringify(transaction.tags),
+    updates: JSON.stringify(transaction.updates)
+  };
+  
+  const all = await getTransactions();
+  const exists = all.find(t => t.id === transaction.id);
+  
+  if (exists) {
+    await fetchGoogleScript('update', SHEET_NAMES.TRANSACTIONS, payload);
+  } else {
+    await fetchGoogleScript('create', SHEET_NAMES.TRANSACTIONS, payload);
+  }
 };

@@ -101,6 +101,34 @@ export interface VisitorRecord {
   recordedBy?: string; // Staff name who added the entry
 }
 
+// Transaction Types
+export type TransactionStatus = 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'CANCELLED';
+
+export interface TransactionUpdate {
+  timestamp: number;
+  authorName: string;
+  note: string;
+  type: 'STATUS_CHANGE' | 'UPDATE';
+  previousStatus?: TransactionStatus;
+  newStatus?: TransactionStatus;
+}
+
+export interface Transaction {
+  id: string;
+  clientName: string;
+  contactInfo: string;
+  transactionType: string;
+  rawNotes: string;
+  aiSummary: string;
+  tags: string[]; // JSON string in DB, parsed array in app
+  status: TransactionStatus;
+  updates: TransactionUpdate[]; // JSON string in DB
+  dateCreated: string; // ISO Date String
+  lastUpdated: number; // Timestamp
+  createdBy: string;
+  isDeleted?: boolean;
+}
+
 // Chart Data Types
 export interface ChartData {
   name: string;

@@ -10,7 +10,8 @@ import About from './pages/About';
 import DeveloperPanel from './pages/DeveloperPanel';
 import Attendance from './pages/Attendance';
 import OfficeManagement from './pages/OfficeManagement';
-import VisitorLogbook from './pages/VisitorLogbook'; // Import new component
+import VisitorLogbook from './pages/VisitorLogbook';
+import Transactions from './pages/Transactions'; // Import Transactions directly
 import { LogIn, X, Loader2, User as UserIcon, Lock, ArrowLeft } from 'lucide-react';
 import { STAFF_CREDENTIALS } from './constants';
 
@@ -113,15 +114,14 @@ const App: React.FC = () => {
       // Office Management Routes
       case '/visitor-log':
         if (!user) return <AccessDenied />;
-        // --- CHANGE: Use VisitorLogbook component ---
         return <VisitorLogbook user={user} />; 
       case '/certifications':
         if (!user) return <AccessDenied />;
-        // --- CHANGE: OfficeManagement handles these views ---
         return <OfficeManagement user={user} view="CERTIFICATION" />;
       case '/transactions':
         if (!user) return <AccessDenied />;
-        return <OfficeManagement user={user} view="TRANSACTION" />;
+        // Directly render Transactions component instead of wrapping in OfficeManagement
+        return <Transactions user={user} />;
       case '/reports':
         if (!user) return <AccessDenied />;
         return <OfficeManagement user={user} view="REPORTS" />;
