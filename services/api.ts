@@ -229,6 +229,10 @@ export const saveHoliday = async (holiday: Holiday) => {
   await fetchGoogleScript('create', SHEET_NAMES.HOLIDAYS, holiday);
 };
 
+export const deleteHoliday = async (id: string) => {
+  await fetchGoogleScript('delete', SHEET_NAMES.HOLIDAYS, { id: String(id) });
+};
+
 // --- VISITOR SERVICES ---
 
 export const getVisitorLogs = async (): Promise<VisitorRecord[]> => {

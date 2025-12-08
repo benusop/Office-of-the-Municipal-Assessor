@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { User, DTRRecord, Holiday } from '../types';
-import { getDTRLogs, saveDTRRecord, getHolidays, saveHoliday } from '../services/api';
-import { Clock, Download, Briefcase, Plane, CalendarPlus, X, AlertCircle, Shield } from 'lucide-react';
+import { getDTRLogs, saveDTRRecord, getHolidays, saveHoliday, deleteHoliday } from '../services/api';
+import { Clock, Download, Briefcase, Plane, CalendarPlus, X, AlertCircle, Shield, List, Trash2, Edit2, Save } from 'lucide-react';
 import { STAFF_CREDENTIALS } from '../constants';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -32,12 +32,16 @@ const Attendance: React.FC<AttendanceProps> = ({ user }) => {
   const [showLeaveModal, setShowLeaveModal] = useState(false);
   const [showOBModal, setShowOBModal] = useState(false);
   const [showHolidayModal, setShowHolidayModal] = useState(false);
+  const [showHolidayListModal, setShowHolidayListModal] = useState(false);
+  const [showEditDTRModal, setShowEditDTRModal] = useState(false);
 
   // Form States
   const [leaveForm, setLeaveForm] = useState({ type: 'Vacation Leave', start: '', end: '', reason: '' });
   const [obForm, setObForm] = useState({ location: '', start: '', end: '', purpose: '' });
-  // Updated holiday form state
   const [holidayForm, setHolidayForm] = useState({ date: '', name: '', type: 'Regular', remarks: '' });
+  
+  // Manual Edit State
+  const [editingDTR, setEditingDTR] = useState<DTRRecord | null>(null);
 
   const isDev = user.role === 'DEVELOPER';
 
@@ -262,6 +266,58 @@ const Attendance: React.FC<AttendanceProps> = ({ user }) => {
       }
   };
 
+  const handleDeleteHoliday = async (id: string) => {
+      if(!confirm("Delete this holiday?")) return;
+      setProcessing(true);
+      try {
+          await deleteHoliday(id);
+          await fetchData();
+      } catch (e) {
+          alert("Failed to delete holiday");
+      } finally {
+          setProcessing(false);
+      }
+  };
+
+  // --- LOGIC: MANUAL DTR EDIT ---
+  const openEditDTR = (date: Date) => {
+      const dateString = date.toLocaleDateString('en-CA');
+      const id = getRecordId(user.id, dateString);
+      const existing = dtrRecords.find(r => r.id === id);
+      
+      const record: DTRRecord = existing ? { ...existing } : {
+          id,
+          staffId: user.id,
+          staffName: user.name,
+          dateString,
+          amIn: '',
+          amOut: '',
+          pmIn: '',
+          pmOut: '',
+          remarks: '',
+          isHoliday: 'false'
+      };
+      
+      setEditingDTR(record);
+      setShowEditDTRModal(true);
+  };
+
+  const handleSaveDTREdit = async () => {
+      if (!editingDTR) return;
+      setProcessing(true);
+      try {
+          await saveDTRRecord(editingDTR);
+          await fetchData();
+          setShowEditDTRModal(false);
+          setEditingDTR(null);
+          alert("Record updated successfully.");
+      } catch (e) {
+          alert("Failed to update DTR record.");
+      } finally {
+          setProcessing(false);
+      }
+  };
+
   // --- LOGIC: PDF ---
   const handleExportPDF = async () => {
     setProcessing(true);
@@ -272,24 +328,17 @@ const Attendance: React.FC<AttendanceProps> = ({ user }) => {
       const pageHeight = doc.internal.pageSize.getHeight();
       
       // 2. Layout Constants - STANDARD FORM SIZE
-      // Civil Service Form 48 is typically narrow (approx 85mm)
-      // We set a fixed width to ensure it matches standard "wideness" regardless of paper
       const dtrWidth = 85; 
-      const gap = 10; // Gap between copies
+      const gap = 10; 
       const margin = 10;
       
-      // Calculate how many copies fit on the page width
       const availableWidth = pageWidth - (margin * 2);
       let numCopies = Math.floor((availableWidth + gap) / (dtrWidth + gap));
-      
-      // Safety check: ensure at least 1, and recalculate to center
       if (numCopies < 1) numCopies = 1;
       
-      // Calculate start X to center the block of copies
       const totalBlockWidth = (numCopies * dtrWidth) + ((numCopies - 1) * gap);
       const startXBase = (pageWidth - totalBlockWidth) / 2;
       
-      // Fetch Logo
       let logoBase64 = null;
       try {
         const logoUrl = 'https://lh3.googleusercontent.com/d/1S7VKW-nIhOwDLDZOXDXgX9w6gCw2OR09';
@@ -298,22 +347,18 @@ const Attendance: React.FC<AttendanceProps> = ({ user }) => {
         console.warn("Could not load logo for PDF");
       }
 
-      // Filter: If My DTR tab is active, only print current user. 
       const targets = [STAFF_CREDENTIALS.find(s => s.id === user.id)!];
 
-      // 3. Generation Loop
       targets.forEach((staff, index) => {
         if (index > 0) doc.addPage();
         
-        // Loop to create copies based on calculated capacity
         for (let i = 0; i < numCopies; i++) {
             const startX = startXBase + (i * (dtrWidth + gap));
             const centerX = startX + (dtrWidth / 2);
             let cursorY = 10;
 
-            // --- A. Watermark (Centered in DTR) ---
             if (logoBase64 && logoBase64.length > 100) {
-                const imgDim = 50; // Size of logo
+                const imgDim = 50; 
                 const imgX = centerX - (imgDim / 2);
                 const imgY = (pageHeight / 2) - (imgDim / 2);
 
@@ -324,8 +369,6 @@ const Attendance: React.FC<AttendanceProps> = ({ user }) => {
                 doc.restoreGraphicsState();
             }
 
-            // --- B. Header ---
-            // Civil Service Form No 48 Standard Layout
             doc.setFontSize(7); 
             doc.setFont('helvetica', 'normal');
             doc.text("CIVIL SERVICE FORM NO. 48", startX, cursorY);
@@ -337,9 +380,8 @@ const Attendance: React.FC<AttendanceProps> = ({ user }) => {
             
             cursorY += 5; 
             doc.setLineWidth(0.4);
-            doc.line(startX + 5, cursorY + 1, startX + dtrWidth - 5, cursorY + 1); // Top line for Name
+            doc.line(startX + 5, cursorY + 1, startX + dtrWidth - 5, cursorY + 1); 
             
-            // Name
             doc.setFontSize(10);
             doc.text("----- " + staff.name.toUpperCase() + " -----", centerX, cursorY, { align: 'center' });
             
@@ -351,7 +393,6 @@ const Attendance: React.FC<AttendanceProps> = ({ user }) => {
             cursorY += 6;
             const monthStr = new Date(selectedYear, selectedMonth).toLocaleString('default', { month: 'long', year: 'numeric' });
             
-            // Left side header info
             doc.text(`For the month of: ${monthStr}`, startX, cursorY);
             doc.text(`Official hours for arrival`, startX + (dtrWidth * 0.55), cursorY);
             
@@ -365,7 +406,6 @@ const Attendance: React.FC<AttendanceProps> = ({ user }) => {
             doc.text(`Saturdays: _____________`, startX + (dtrWidth * 0.55), cursorY);
             cursorY += 2;
 
-            // --- C. Table Data Preparation ---
             const daysInMonth = new Date(selectedYear, selectedMonth + 1, 0).getDate();
             const tableBody = [];
             const staffRecords = dtrRecords.filter(r => r.staffId === staff.id);
@@ -374,6 +414,7 @@ const Attendance: React.FC<AttendanceProps> = ({ user }) => {
                 const date = new Date(selectedYear, selectedMonth, day);
                 const dateString = date.toLocaleDateString('en-CA');
                 const rec = staffRecords.find(r => r.dateString === dateString);
+                // Get the FIRST matching holiday
                 const holiday = holidays.find(h => h.dateString === dateString);
                 const isWeekend = date.getDay() === 0 || date.getDay() === 6;
                 const dayName = date.toLocaleDateString('en-US', { weekday: 'long' }).toUpperCase();
@@ -381,35 +422,39 @@ const Attendance: React.FC<AttendanceProps> = ({ user }) => {
                 let rowData: any[] = [];
 
                 if (holiday) {
-                    // Holiday Merged Row with Remarks
                     const holidayText = holiday.remarks 
                         ? `${holiday.name.toUpperCase()} (${holiday.remarks})`
                         : holiday.name.toUpperCase();
 
                     rowData = [
                         day,
-                        { content: holidayText, colSpan: 6, styles: { halign: 'center', textColor: [220, 38, 38], fontStyle: 'bold' } }
+                        { 
+                            content: holidayText, 
+                            colSpan: 6, 
+                            styles: { 
+                                halign: 'center', 
+                                textColor: [220, 38, 38], 
+                                fontStyle: 'bold', 
+                                fillColor: [255, 255, 255] 
+                            } 
+                        }
                     ];
                 } else if (isWeekend) {
-                     // Weekend Merged Row
                      rowData = [
                         day,
                         { content: dayName, colSpan: 6, styles: { halign: 'center', fontStyle: 'bold', textColor: [100, 100, 100] } }
                      ];
                 } else if (rec?.remarks?.includes('LEAVE')) {
-                     // Leave Merged Row
                      rowData = [
                         day,
                         { content: rec.remarks.toUpperCase(), colSpan: 6, styles: { halign: 'center', textColor: [234, 88, 12] } }
                      ];
                 } else if (rec?.remarks?.includes('OB')) {
-                     // OB Merged Row
                      rowData = [
                         day,
                         { content: 'OFFICIAL BUSINESS', colSpan: 6, styles: { halign: 'center', textColor: [88, 28, 135] } }
                      ];
                 } else {
-                    // Standard Time Row
                     let amIn = rec?.amIn || '';
                     let amOut = rec?.amOut || '';
                     let pmIn = rec?.pmIn || '';
@@ -424,14 +469,13 @@ const Attendance: React.FC<AttendanceProps> = ({ user }) => {
                         formatTime(amOut),
                         { content: formatTime(pmIn), styles: isLatePM ? { textColor: [220, 38, 38], fontStyle: 'bold' } : {} },
                         formatTime(pmOut),
-                        '', // Undertime Hrs
-                        ''  // Undertime Min
+                        '', 
+                        '' 
                     ];
                 }
                 tableBody.push(rowData);
             }
 
-            // --- D. Draw Table ---
             autoTable(doc, {
                 startX: startX, 
                 startY: cursorY,
@@ -446,7 +490,6 @@ const Attendance: React.FC<AttendanceProps> = ({ user }) => {
                 ],
                 body: tableBody,
                 theme: 'plain',
-                // Precise styling to fit 31 days + signatures
                 styles: { 
                     fontSize: 7.5, 
                     cellPadding: 0.6, 
@@ -464,20 +507,19 @@ const Attendance: React.FC<AttendanceProps> = ({ user }) => {
                     halign: 'center' 
                 },
                 columnStyles: { 
-                    0: { cellWidth: 8 },  // Day
-                    1: { cellWidth: 12.8 }, // AM Arr
-                    2: { cellWidth: 12.8 }, // AM Dep
-                    3: { cellWidth: 12.8 }, // PM Arr
-                    4: { cellWidth: 12.8 }, // PM Dep
-                    5: { cellWidth: 10 }, // UT Hrs
-                    6: { cellWidth: 10 }  // UT Min
+                    0: { cellWidth: 8 },  
+                    1: { cellWidth: 12.8 }, 
+                    2: { cellWidth: 12.8 }, 
+                    3: { cellWidth: 12.8 }, 
+                    4: { cellWidth: 12.8 }, 
+                    5: { cellWidth: 10 }, 
+                    6: { cellWidth: 10 } 
                 },
                 margin: { left: startX },
                 tableWidth: dtrWidth,
                 minCellHeight: 3.8
             });
 
-            // --- E. Footer / Signature ---
             const finalY = (doc as any).lastAutoTable?.finalY + 4 || cursorY + 120;
             
             doc.setFontSize(7);
@@ -518,17 +560,12 @@ const Attendance: React.FC<AttendanceProps> = ({ user }) => {
 
   const renderDashboardDaily = () => {
     const todayStr = new Date().toLocaleDateString('en-CA');
-    
-    // EXCLUDE Provincial Personnel from standard list
     const presentToday = dtrRecords.filter(r => r.dateString === todayStr && r.amIn && r.staffId !== provincialStaffId);
-    
-    // Provincial Personnel Record
     const provRecord = provincialStaff ? dtrRecords.find(r => r.staffId === provincialStaff.id && r.dateString === todayStr) : null;
 
     return (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-6">
-                {/* Regular Staff List */}
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
                     <h3 className="font-bold text-gray-700 mb-4 flex items-center"><Clock size={20} className="mr-2 text-emerald-600"/> Who is In Today? (Municipal)</h3>
                     {presentToday.length === 0 ? <p className="text-gray-400">No one has clocked in yet.</p> : (
@@ -546,7 +583,6 @@ const Attendance: React.FC<AttendanceProps> = ({ user }) => {
                     )}
                 </div>
 
-                {/* Separate Provincial Personnel Log Card */}
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
                     <h3 className="font-bold text-gray-700 mb-4 flex items-center"><Shield size={20} className="mr-2 text-blue-600"/> Provincial Personnel Log</h3>
                     {provRecord && (provRecord.amIn || provRecord.pmIn) ? (
@@ -572,9 +608,14 @@ const Attendance: React.FC<AttendanceProps> = ({ user }) => {
                     <button onClick={() => setShowOBModal(true)} className="p-4 bg-purple-100 text-purple-800 rounded-lg hover:bg-purple-200 font-bold transition flex flex-col items-center"><Plane size={20} className="mb-1"/> File O.B.</button>
                  </div>
                  {isDev && (
-                     <button onClick={() => setShowHolidayModal(true)} className="mt-4 w-full py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 text-sm font-bold border border-gray-300 flex items-center justify-center">
-                        <CalendarPlus size={16} className="mr-2"/> Set Holiday (Dev)
-                     </button>
+                     <div className="mt-4 flex gap-2">
+                        <button onClick={() => setShowHolidayModal(true)} className="flex-1 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 text-sm font-bold border border-gray-300 flex items-center justify-center">
+                            <CalendarPlus size={16} className="mr-2"/> Add Holiday
+                        </button>
+                        <button onClick={() => setShowHolidayListModal(true)} className="flex-1 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 text-sm font-bold border border-gray-300 flex items-center justify-center">
+                            <List size={16} className="mr-2"/> View DB
+                        </button>
+                     </div>
                  )}
             </div>
         </div>
@@ -582,6 +623,7 @@ const Attendance: React.FC<AttendanceProps> = ({ user }) => {
   };
 
   const renderDashboardWeekly = () => {
+     // ... weekly implementation
      const today = new Date();
      const startOfWeek = new Date(today);
      startOfWeek.setDate(today.getDate() - today.getDay() + 1); // Monday
@@ -608,7 +650,9 @@ const Attendance: React.FC<AttendanceProps> = ({ user }) => {
                             {weekDates.map(d => {
                                 const ds = d.toLocaleDateString('en-CA');
                                 const rec = dtrRecords.find(r => r.staffId === staff.id && r.dateString === ds);
+                                // Determine first holiday match
                                 const hol = holidays.find(h => h.dateString === ds);
+                                
                                 let content = <span className="text-gray-300">-</span>;
                                 if (hol) content = <span className="text-red-500 font-bold text-xs">HOL</span>;
                                 else if (rec?.amIn || rec?.pmIn) content = <span className="text-emerald-600 font-bold">✔</span>;
@@ -652,39 +696,53 @@ const Attendance: React.FC<AttendanceProps> = ({ user }) => {
       for (let day = 1; day <= daysInMonth; day++) {
           const date = new Date(selectedYear, selectedMonth, day);
           const dateString = date.toLocaleDateString('en-CA');
-          const dayName = date.toLocaleDateString('en-US', { weekday: 'long' }).toUpperCase(); // Full day name uppercase
+          const dayName = date.toLocaleDateString('en-US', { weekday: 'long' }).toUpperCase(); 
           const isWeekend = date.getDay() === 0 || date.getDay() === 6;
           const rec = staffRecords.find(r => r.dateString === dateString);
+          
+          // Apply First Found Holiday
           const holiday = holidays.find(h => h.dateString === dateString);
           
+          const rowBaseProps = {
+              key: day,
+              className: "text-center h-8 text-xs cursor-pointer hover:bg-blue-50 transition",
+              onClick: () => openEditDTR(date)
+          };
+
           if (holiday) {
              const holidayText = holiday.remarks 
                 ? `${holiday.name.toUpperCase()} (${holiday.remarks})`
                 : holiday.name.toUpperCase();
 
              rows.push(
-                <tr key={day} className="text-center h-8 text-xs bg-red-50">
+                <tr {...rowBaseProps}>
                     <td className="border p-1 font-bold w-12">{day}</td>
-                    <td className="border p-1 text-red-600 font-bold" colSpan={6}>{holidayText}</td>
+                    <td className="border p-1 text-red-600 font-bold uppercase tracking-widest text-[10px]" colSpan={6}>
+                        <div className="flex justify-center">
+                            <span className="bg-white px-3 py-0.5 rounded-full border border-red-100 shadow-sm relative -top-0">
+                                {holidayText}
+                            </span>
+                        </div>
+                    </td>
                 </tr>
              );
           } else if (isWeekend) {
              rows.push(
-                <tr key={day} className="text-center h-8 text-xs bg-gray-50">
+                <tr {...rowBaseProps} className="text-center h-8 text-xs bg-gray-50 hover:bg-blue-50">
                     <td className="border p-1 font-bold w-12">{day}</td>
                     <td className="border p-1 text-gray-400 font-bold" colSpan={6}>{dayName}</td>
                 </tr>
              );
           } else if (rec?.remarks?.includes('LEAVE')) {
              rows.push(
-                <tr key={day} className="text-center h-8 text-xs bg-orange-50">
+                <tr {...rowBaseProps} className="text-center h-8 text-xs bg-orange-50 hover:bg-orange-100">
                     <td className="border p-1 font-bold w-12">{day}</td>
                     <td className="border p-1 text-orange-600 font-bold" colSpan={6}>{rec.remarks.toUpperCase()}</td>
                 </tr>
              );
           } else if (rec?.remarks?.includes('OB')) {
              rows.push(
-                <tr key={day} className="text-center h-8 text-xs bg-purple-50">
+                <tr {...rowBaseProps} className="text-center h-8 text-xs bg-purple-50 hover:bg-purple-100">
                     <td className="border p-1 font-bold w-12">{day}</td>
                     <td className="border p-1 text-purple-600 font-bold" colSpan={6}>OFFICIAL BUSINESS</td>
                 </tr>
@@ -696,7 +754,7 @@ const Attendance: React.FC<AttendanceProps> = ({ user }) => {
               let pmOut = rec?.pmOut || '';
               
               rows.push(
-                <tr key={day} className="text-center h-8 text-xs">
+                <tr {...rowBaseProps}>
                     <td className="border p-1 font-bold w-12">{day}</td>
                     <td className={`border p-1 font-mono w-20 ${amIn > '08:00' ? 'text-red-600 font-bold' : ''}`}>{formatTime(amIn)}</td>
                     <td className="border p-1 font-mono w-20">{formatTime(amOut)}</td>
@@ -717,7 +775,10 @@ const Attendance: React.FC<AttendanceProps> = ({ user }) => {
                            {Array.from({length:12},(_,i)=><option key={i} value={i}>{new Date(0,i).toLocaleString('default',{month:'long'})}</option>)}
                        </select>
                        <select value={selectedYear} onChange={e=>setSelectedYear(Number(e.target.value))} className="border p-2 rounded text-sm bg-white text-gray-900">
-                           <option value={2024}>2024</option><option value={2025}>2025</option>
+                           <option value={2024}>2024</option>
+                           <option value={2025}>2025</option>
+                           <option value={2026}>2026</option>
+                           <option value={2027}>2027</option>
                        </select>
                   </div>
                   <div className="flex gap-2">
@@ -747,6 +808,7 @@ const Attendance: React.FC<AttendanceProps> = ({ user }) => {
                       </thead>
                       <tbody>{rows}</tbody>
                   </table>
+                  <p className="text-center text-xs text-gray-400 mt-4 italic">Click on any row to manually edit the record.</p>
               </div>
           </div>
       );
@@ -873,6 +935,122 @@ const Attendance: React.FC<AttendanceProps> = ({ user }) => {
                       <div className="flex justify-end gap-2 pt-2">
                           <button onClick={()=>setShowHolidayModal(false)} className="px-4 py-2 bg-gray-200 rounded font-bold text-sm hover:bg-gray-300">Cancel</button>
                           <button onClick={handleSaveHoliday} disabled={processing} className="px-4 py-2 bg-red-600 text-white rounded font-bold text-sm hover:bg-red-700">Set Holiday</button>
+                      </div>
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* MODAL: HOLIDAY DATABASE LIST */}
+      {showHolidayListModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4 animate-fadeIn">
+              <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl relative max-h-[80vh] flex flex-col">
+                  <div className="p-4 border-b flex justify-between items-center bg-gray-50">
+                      <h3 className="font-bold text-lg text-gray-800 flex items-center"><List size={20} className="mr-2"/> Holiday Database</h3>
+                      <button onClick={() => setShowHolidayListModal(false)} className="text-gray-400 hover:text-gray-600"><X size={20}/></button>
+                  </div>
+                  
+                  <div className="p-0 overflow-y-auto flex-grow">
+                      <table className="min-w-full text-sm text-left">
+                          <thead className="bg-gray-100 text-gray-600 sticky top-0">
+                              <tr>
+                                  <th className="p-3">Date</th>
+                                  <th className="p-3">Name</th>
+                                  <th className="p-3">Type</th>
+                                  <th className="p-3">Remarks</th>
+                                  <th className="p-3 text-right">Action</th>
+                              </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100">
+                              {holidays.length === 0 ? (
+                                  <tr><td colSpan={5} className="p-6 text-center text-gray-400">No holidays recorded.</td></tr>
+                              ) : (
+                                  holidays.sort((a,b) => b.dateString.localeCompare(a.dateString)).map(h => (
+                                      <tr key={h.id} className="hover:bg-gray-50">
+                                          <td className="p-3 font-mono">{h.dateString}</td>
+                                          <td className="p-3 font-bold">{h.name}</td>
+                                          <td className="p-3"><span className={`text-[10px] uppercase px-2 py-1 rounded ${h.type === 'Regular' ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700'}`}>{h.type}</span></td>
+                                          <td className="p-3 text-gray-500 italic">{h.remarks || '-'}</td>
+                                          <td className="p-3 text-right">
+                                              <button 
+                                                  onClick={() => handleDeleteHoliday(h.id)} 
+                                                  className="p-1.5 bg-red-50 text-red-600 rounded hover:bg-red-100"
+                                                  title="Delete Holiday"
+                                              >
+                                                  <Trash2 size={16}/>
+                                              </button>
+                                          </td>
+                                      </tr>
+                                  ))
+                              )}
+                          </tbody>
+                      </table>
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* MODAL: MANUAL DTR EDIT */}
+      {showEditDTRModal && editingDTR && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4 animate-fadeIn">
+              <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md relative">
+                  <button onClick={() => setShowEditDTRModal(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"><X size={20}/></button>
+                  <h3 className="font-bold text-lg mb-4 flex items-center text-gray-800">
+                      <Edit2 size={20} className="mr-2 text-blue-600"/> 
+                      Edit DTR: {new Date(editingDTR.dateString).toLocaleDateString()}
+                  </h3>
+                  
+                  <div className="space-y-4">
+                      <div className="grid grid-cols-2 gap-4 bg-gray-50 p-3 rounded-lg border border-gray-200">
+                          <div>
+                              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">AM Arrival</label>
+                              <input 
+                                type="time" className="w-full border rounded p-1 text-sm bg-white text-gray-900"
+                                value={editingDTR.amIn || ''}
+                                onChange={e => setEditingDTR({...editingDTR, amIn: e.target.value})}
+                              />
+                          </div>
+                          <div>
+                              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">AM Departure</label>
+                              <input 
+                                type="time" className="w-full border rounded p-1 text-sm bg-white text-gray-900"
+                                value={editingDTR.amOut || ''}
+                                onChange={e => setEditingDTR({...editingDTR, amOut: e.target.value})}
+                              />
+                          </div>
+                          <div>
+                              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">PM Arrival</label>
+                              <input 
+                                type="time" className="w-full border rounded p-1 text-sm bg-white text-gray-900"
+                                value={editingDTR.pmIn || ''}
+                                onChange={e => setEditingDTR({...editingDTR, pmIn: e.target.value})}
+                              />
+                          </div>
+                          <div>
+                              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">PM Departure</label>
+                              <input 
+                                type="time" className="w-full border rounded p-1 text-sm bg-white text-gray-900"
+                                value={editingDTR.pmOut || ''}
+                                onChange={e => setEditingDTR({...editingDTR, pmOut: e.target.value})}
+                              />
+                          </div>
+                      </div>
+
+                      <div>
+                          <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Remarks</label>
+                          <textarea 
+                              className="w-full border border-gray-300 rounded p-2 text-sm bg-white text-gray-900 h-20"
+                              placeholder="e.g. Leave, OB, Official Time..."
+                              value={editingDTR.remarks || ''}
+                              onChange={e => setEditingDTR({...editingDTR, remarks: e.target.value})}
+                          />
+                      </div>
+
+                      <div className="flex justify-end gap-2 pt-2">
+                          <button onClick={() => setShowEditDTRModal(false)} className="px-4 py-2 bg-gray-200 rounded font-bold text-sm hover:bg-gray-300">Cancel</button>
+                          <button onClick={handleSaveDTREdit} disabled={processing} className="px-4 py-2 bg-blue-600 text-white rounded font-bold text-sm hover:bg-blue-700 flex items-center">
+                              <Save size={16} className="mr-2"/> Save Changes
+                          </button>
                       </div>
                   </div>
               </div>
