@@ -61,7 +61,8 @@ const Attendance: React.FC<AttendanceProps> = ({ user }) => {
     try {
       const [dtr, hols] = await Promise.all([getDTRLogs(), getHolidays()]);
       setDtrRecords(dtr);
-      setHolidays(hols);
+      // Ensure holidays are valid array
+      setHolidays(hols || []);
     } catch (e) {
       console.error("Failed to fetch DTR data");
     } finally {
@@ -414,8 +415,11 @@ const Attendance: React.FC<AttendanceProps> = ({ user }) => {
                 const date = new Date(selectedYear, selectedMonth, day);
                 const dateString = date.toLocaleDateString('en-CA');
                 const rec = staffRecords.find(r => r.dateString === dateString);
-                // Get the FIRST matching holiday
-                const holiday = holidays.find(h => h.dateString === dateString);
+                
+                // --- HOLIDAY LOGIC (PDF) ---
+                // Trim logic added to ensure matches against GSheets data
+                const holiday = holidays.find(h => h.dateString.trim() === dateString.trim());
+                
                 const isWeekend = date.getDay() === 0 || date.getDay() === 6;
                 const dayName = date.toLocaleDateString('en-US', { weekday: 'long' }).toUpperCase();
                 
@@ -650,8 +654,8 @@ const Attendance: React.FC<AttendanceProps> = ({ user }) => {
                             {weekDates.map(d => {
                                 const ds = d.toLocaleDateString('en-CA');
                                 const rec = dtrRecords.find(r => r.staffId === staff.id && r.dateString === ds);
-                                // Determine first holiday match
-                                const hol = holidays.find(h => h.dateString === ds);
+                                // Determine first holiday match with trimmed string check
+                                const hol = holidays.find(h => h.dateString.trim() === ds);
                                 
                                 let content = <span className="text-gray-300">-</span>;
                                 if (hol) content = <span className="text-red-500 font-bold text-xs">HOL</span>;
@@ -700,8 +704,8 @@ const Attendance: React.FC<AttendanceProps> = ({ user }) => {
           const isWeekend = date.getDay() === 0 || date.getDay() === 6;
           const rec = staffRecords.find(r => r.dateString === dateString);
           
-          // Apply First Found Holiday
-          const holiday = holidays.find(h => h.dateString === dateString);
+          // Apply First Found Holiday - ROBUST MATCHING
+          const holiday = holidays.find(h => h.dateString.trim() === dateString.trim());
           
           const rowBaseProps = {
               key: day,

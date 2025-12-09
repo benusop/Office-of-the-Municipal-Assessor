@@ -9,10 +9,11 @@ import AddAssessment from './pages/AddAssessment';
 import About from './pages/About';
 import DeveloperPanel from './pages/DeveloperPanel';
 import Attendance from './pages/Attendance';
-import OfficeManagement from './pages/OfficeManagement';
 import VisitorLogbook from './pages/VisitorLogbook';
-import Transactions from './pages/Transactions'; // Import Transactions directly
-import { LogIn, X, Loader2, User as UserIcon, Lock, ArrowLeft } from 'lucide-react';
+import Transactions from './pages/Transactions';
+import Certifications from './pages/Certifications';
+import Reports from './pages/Reports';
+import { LogIn, X, Loader2, Lock, ArrowLeft } from 'lucide-react';
 import { STAFF_CREDENTIALS } from './constants';
 
 const App: React.FC = () => {
@@ -117,14 +118,13 @@ const App: React.FC = () => {
         return <VisitorLogbook user={user} />; 
       case '/certifications':
         if (!user) return <AccessDenied />;
-        return <OfficeManagement user={user} view="CERTIFICATION" />;
+        return <Certifications user={user} />;
       case '/transactions':
         if (!user) return <AccessDenied />;
-        // Directly render Transactions component instead of wrapping in OfficeManagement
         return <Transactions user={user} />;
       case '/reports':
         if (!user) return <AccessDenied />;
-        return <OfficeManagement user={user} view="REPORTS" />;
+        return <Reports assessments={assessments} />;
 
       case '/about':
         return <About />;
