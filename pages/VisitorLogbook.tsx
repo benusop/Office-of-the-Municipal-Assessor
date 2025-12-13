@@ -1,9 +1,9 @@
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { User, VisitorRecord } from '../types';
 import { 
   Users, Clock, LogOut, Plus, Search, History, 
-  MapPin, Phone, X, Loader2, Save, Trash2
+  MapPin, Phone, X, Loader2, Save, Trash2, RefreshCw
 } from 'lucide-react';
 import { getVisitorLogs, addVisitorLog, updateVisitorLog, deleteVisitorLog } from '../services/api';
 import { VALID_IDS, ASSESSOR_TRANSACTIONS } from '../constants';
@@ -17,9 +17,8 @@ interface VisitorLogbookProps {
 const formatDateDisplay = (val: string) => {
   if (!val) return '';
   try {
-    // Handle specific ISO or Full Date strings that might look "weird"
     const d = new Date(val);
-    if (isNaN(d.getTime())) return val; // Fallback to raw string if parsing fails
+    if (isNaN(d.getTime())) return val;
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   } catch { return val; }
 };
@@ -42,6 +41,7 @@ const VisitorLogbook: React.FC<VisitorLogbookProps> = ({ user }) => {
   // --- STATE ---
   const [records, setRecords] = useState<VisitorRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState<'ACTIVE' | 'HISTORY'>('ACTIVE');
   
   // Filters
@@ -74,6 +74,21 @@ const VisitorLogbook: React.FC<VisitorLogbookProps> = ({ user }) => {
   const suggestionRef = useRef<HTMLDivElement>(null);
 
   // --- INITIALIZATION ---
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const data = await getVisitorLogs();
+      const sorted = (data || []).filter(d => d.status !== 'DELETED').sort((a, b) => (a.id < b.id ? 1 : -1));
+      setRecords(sorted);
+    } catch (e) {
+      console.error("Failed to load logs", e);
+      setError('Unable to connect to the database.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     fetchData();
     const handleClickOutside = (e: MouseEvent) => {
@@ -83,29 +98,14 @@ const VisitorLogbook: React.FC<VisitorLogbookProps> = ({ user }) => {
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  const fetchData = async () => {
-    setLoading(true);
-    try {
-      const data = await getVisitorLogs();
-      const sorted = data.filter(d => d.status !== 'DELETED').sort((a, b) => (a.id < b.id ? 1 : -1));
-      setRecords(sorted);
-    } catch (e) {
-      console.error("Failed to load logs", e);
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, [fetchData]);
 
   // --- DERIVED STATE ---
   
-  // Active Visitors: Records with NO Time Out
   const activeVisitors = useMemo(() => {
     return records.filter(r => !r.timeOut || r.timeOut.trim() === '');
   }, [records]);
 
-  // History Visitors: Records WITH Time Out
   const historyVisitors = useMemo(() => {
     return records.filter(r => {
       const hasTimeOut = r.timeOut && r.timeOut.trim().length > 0;
@@ -114,13 +114,9 @@ const VisitorLogbook: React.FC<VisitorLogbookProps> = ({ user }) => {
       // Date Filter
       if (historyDate) {
          try {
-             const rDate = new Date(r.dateString);
-             if (!isNaN(rDate.getTime())) {
-                 const rYear = rDate.getFullYear();
-                 const rMonth = rDate.getMonth() + 1;
-                 const [filterYear, filterMonth] = historyDate.split('-').map(Number);
-                 if (rYear !== filterYear || rMonth !== filterMonth) return false;
-             }
+             // Handle simple date strings and ISO strings
+             const dStr = r.dateString.split('T')[0]; // Extract YYYY-MM-DD
+             if (!dStr.startsWith(historyDate)) return false;
          } catch (e) { return false; }
       }
       return true;
@@ -132,9 +128,9 @@ const VisitorLogbook: React.FC<VisitorLogbookProps> = ({ user }) => {
     if (!searchTerm) return list;
     const lower = searchTerm.toLowerCase();
     return list.filter(r => 
-      r.lastName.toLowerCase().includes(lower) || 
-      r.firstName.toLowerCase().includes(lower) ||
-      r.affiliation.toLowerCase().includes(lower)
+      (r.lastName || '').toLowerCase().includes(lower) || 
+      (r.firstName || '').toLowerCase().includes(lower) ||
+      (r.affiliation || '').toLowerCase().includes(lower)
     );
   }, [activeTab, activeVisitors, historyVisitors, searchTerm]);
 
@@ -145,7 +141,7 @@ const VisitorLogbook: React.FC<VisitorLogbookProps> = ({ user }) => {
     setForm(prev => ({ ...prev, lastName: val }));
 
     if (val.length > 2) {
-      const matches = records.filter(r => r.lastName.toLowerCase().includes(val.toLowerCase()));
+      const matches = records.filter(r => (r.lastName || '').toLowerCase().includes(val.toLowerCase()));
       const unique = matches.filter((v, i, a) => a.findIndex(t => (t.firstName === v.firstName && t.lastName === v.lastName)) === i);
       setSuggestions(unique.slice(0, 5));
       setShowSuggestions(unique.length > 0);
@@ -186,23 +182,25 @@ const VisitorLogbook: React.FC<VisitorLogbookProps> = ({ user }) => {
       if (isManualMode) {
         dateString = form.manualDate;
         
-        // Parse Manual Time In
-        if (form.manualTimeIn) {
-           const [h, m] = form.manualTimeIn.split(':');
-           const d = new Date(); d.setHours(Number(h)); d.setMinutes(Number(m));
-           timeIn = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-        }
+        // Manual Time Construction Helper
+        const makeTime = (timeStr: string) => {
+            if (!timeStr) return '';
+            const [h, m] = timeStr.split(':');
+            const d = new Date(); 
+            d.setHours(Number(h)); 
+            d.setMinutes(Number(m));
+            return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+        };
+
+        if (form.manualTimeIn) timeIn = makeTime(form.manualTimeIn);
         
-        // Parse Manual Time Out
         if (form.manualTimeOut) {
-           const [h, m] = form.manualTimeOut.split(':');
-           const d = new Date(); d.setHours(Number(h)); d.setMinutes(Number(m));
-           timeOut = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+           timeOut = makeTime(form.manualTimeOut);
            status = 'COMPLETED';
         }
       }
 
-      // Generate a unique ID with random suffix to prevent row collision in Sheets
+      // Generate a unique ID
       const uniqueId = `V-${now}-${Math.floor(Math.random() * 1000)}`;
 
       const newRecord: VisitorRecord = {
@@ -248,10 +246,9 @@ const VisitorLogbook: React.FC<VisitorLogbookProps> = ({ user }) => {
       const timeOut = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
       const status = 'COMPLETED';
 
-      // Optimistic Update: Update 'timeOut' immediately so it moves tabs
+      // Optimistic Update
       setRecords(prev => prev.map(r => r.id === id ? { ...r, timeOut, status } : r));
       
-      // API Call
       await updateVisitorLog(id, {
         timeOut: timeOut,
         status: status
@@ -260,7 +257,7 @@ const VisitorLogbook: React.FC<VisitorLogbookProps> = ({ user }) => {
     } catch (e) {
       console.error(e);
       alert("Error updating record.");
-      fetchData(); // Refresh on error
+      fetchData();
     } finally {
       setProcessingId(null);
     }
@@ -273,13 +270,11 @@ const VisitorLogbook: React.FC<VisitorLogbookProps> = ({ user }) => {
     try {
        // Optimistic Delete
        setRecords(prev => prev.filter(r => r.id !== id));
-       
-       // API Call
        await deleteVisitorLog(id);
     } catch (e) {
        console.error(e);
        alert("Error deleting record.");
-       fetchData(); // Revert if failed
+       fetchData();
     } finally {
        setDeletingId(null);
     }
@@ -349,6 +344,14 @@ const VisitorLogbook: React.FC<VisitorLogbookProps> = ({ user }) => {
                     onChange={e => setSearchTerm(e.target.value)}
                 />
             </div>
+            <button 
+                onClick={fetchData}
+                disabled={loading}
+                className="p-2 border border-gray-200 rounded-md bg-white text-gray-500 hover:text-emerald-600 hover:border-emerald-200 transition"
+                title="Refresh List"
+            >
+                <RefreshCw size={18} className={loading ? "animate-spin" : ""} />
+            </button>
          </div>
       </div>
 
@@ -369,6 +372,8 @@ const VisitorLogbook: React.FC<VisitorLogbookProps> = ({ user }) => {
                 <tbody className="divide-y divide-gray-100">
                     {loading ? (
                         <tr><td colSpan={6} className="p-10 text-center"><Loader2 className="animate-spin mx-auto text-emerald-500"/></td></tr>
+                    ) : error ? (
+                        <tr><td colSpan={6} className="p-10 text-center text-red-500 font-bold">{error}</td></tr>
                     ) : filteredList.length === 0 ? (
                         <tr><td colSpan={6} className="p-10 text-center text-gray-400 italic">No records found.</td></tr>
                     ) : (

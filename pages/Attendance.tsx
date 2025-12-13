@@ -1,8 +1,8 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { User, DTRRecord, Holiday } from '../types';
 import { getDTRLogs, saveDTRRecord, getHolidays, saveHoliday, deleteHoliday } from '../services/api';
-import { Clock, Download, Briefcase, Plane, CalendarPlus, X, AlertCircle, Shield, List, Trash2, Edit2, Save } from 'lucide-react';
+import { Clock, Download, Briefcase, Plane, CalendarPlus, X, AlertCircle, Shield, List, Trash2, Edit2, Save, RefreshCw } from 'lucide-react';
 import { STAFF_CREDENTIALS } from '../constants';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -11,8 +11,22 @@ interface AttendanceProps {
   user: User;
 }
 
+// Isolated component to prevent full page re-render every second
+const ClockHeader = () => {
+  const [time, setTime] = useState(new Date());
+  useEffect(() => {
+    const timer = setInterval(() => setTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  return (
+    <p className="text-xs text-gray-500 font-mono">
+      {time.toLocaleString('en-US', { weekday: 'long', month:'long', day:'numeric', hour:'numeric', minute:'numeric', hour12: true, second: '2-digit' })}
+    </p>
+  );
+};
+
 const Attendance: React.FC<AttendanceProps> = ({ user }) => {
-  const [currentTime, setCurrentTime] = useState(new Date());
   const [dtrRecords, setDtrRecords] = useState<DTRRecord[]>([]);
   const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [loading, setLoading] = useState(true);
@@ -50,25 +64,24 @@ const Attendance: React.FC<AttendanceProps> = ({ user }) => {
   const regularStaff = STAFF_CREDENTIALS.filter(s => s.id !== provincialStaffId);
   const provincialStaff = STAFF_CREDENTIALS.find(s => s.id === provincialStaffId);
 
-  useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
-    fetchData();
-    return () => clearInterval(timer);
-  }, []);
-
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
     try {
+      // Parallel fetch for speed
       const [dtr, hols] = await Promise.all([getDTRLogs(), getHolidays()]);
-      setDtrRecords(dtr);
-      // Ensure holidays are valid array
+      setDtrRecords(dtr || []);
       setHolidays(hols || []);
     } catch (e) {
-      console.error("Failed to fetch DTR data");
+      console.error("Failed to fetch DTR data", e);
+      // Optional: Add toast notification here
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   const getRecordId = (userId: string, dateStr: string) => `${dateStr}_${userId}`;
 
@@ -89,14 +102,16 @@ const Attendance: React.FC<AttendanceProps> = ({ user }) => {
 
   const getBase64FromUrl = async (url: string): Promise<string> => {
     try {
-        const data = await fetch(url);
+        const data = await fetch(url, { cache: 'no-cache' });
         const blob = await data.blob();
         return new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.readAsDataURL(blob);
-        reader.onloadend = () => resolve(reader.result as string);
+          const reader = new FileReader();
+          reader.readAsDataURL(blob);
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.onerror = () => resolve("");
         });
     } catch (e) {
+        console.warn("Failed to load image for PDF", e);
         return "";
     }
   }
@@ -112,7 +127,7 @@ const Attendance: React.FC<AttendanceProps> = ({ user }) => {
     const amStart = 6 * 60 + 30; // 6:30 AM
     const amEnd = 11 * 60 + 30;  // 11:30 AM
     const pmStart = 12 * 60 + 10; // 12:10 PM
-    const pmEnd = 15 * 60;       // 3:00 PM
+    const pmEnd = 17 * 60;       // Extended to 5:00 PM for flexibility
 
     if (type === 'AM') {
         if (currentMinutes < amStart || currentMinutes > amEnd) {
@@ -121,7 +136,7 @@ const Attendance: React.FC<AttendanceProps> = ({ user }) => {
         }
     } else {
         if (currentMinutes < pmStart || currentMinutes > pmEnd) {
-            alert("PM Clock-in is only available between 12:10 PM and 3:00 PM.");
+            alert("PM Clock-in is only available between 12:10 PM and 5:00 PM.");
             return;
         }
     }
@@ -131,7 +146,7 @@ const Attendance: React.FC<AttendanceProps> = ({ user }) => {
     try {
       const todayString = new Date().toLocaleDateString('en-CA');
       // Store in standard 24h format for consistent logic/sorting
-      const timeString = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }); 
+      const timeString = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }); 
       const id = getRecordId(user.id, todayString);
       
       const existing = dtrRecords.find(r => r.id === id);
@@ -173,12 +188,19 @@ const Attendance: React.FC<AttendanceProps> = ({ user }) => {
         newRecord.pmOut = "17:00"; // Auto-set (5 PM)
       }
 
+      // Optimistic UI Update
+      setDtrRecords(prev => {
+          const others = prev.filter(r => r.id !== id);
+          return [...others, newRecord];
+      });
+
       await saveDTRRecord(newRecord);
-      await fetchData();
+      await fetchData(); // Re-fetch to ensure consistency
       alert(`Success! ${type} IN recorded at ${formatTime(timeString)}.`);
     } catch (e) {
       console.error(e);
       alert("Failed to save DTR. Please check connection.");
+      fetchData(); // Revert optimistic update on fail
     } finally {
       setProcessing(false);
     }
@@ -198,6 +220,7 @@ const Attendance: React.FC<AttendanceProps> = ({ user }) => {
         }
 
         // Iterate dates
+        const updates: Promise<void>[] = [];
         for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
             // Skip weekends
             if (d.getDay() === 0 || d.getDay() === 6) continue;
@@ -229,9 +252,10 @@ const Attendance: React.FC<AttendanceProps> = ({ user }) => {
                 isHoliday: 'false'
             };
             
-            await saveDTRRecord(record);
+            updates.push(saveDTRRecord(record));
         }
         
+        await Promise.all(updates);
         await fetchData();
         setShowLeaveModal(false);
         setShowOBModal(false);
@@ -417,7 +441,7 @@ const Attendance: React.FC<AttendanceProps> = ({ user }) => {
                 const rec = staffRecords.find(r => r.dateString === dateString);
                 
                 // --- HOLIDAY LOGIC (PDF) ---
-                // Trim logic added to ensure matches against GSheets data
+                // Robust string trim matching
                 const holiday = holidays.find(h => h.dateString.trim() === dateString.trim());
                 
                 const isWeekend = date.getDay() === 0 || date.getDay() === 6;
@@ -554,7 +578,7 @@ const Attendance: React.FC<AttendanceProps> = ({ user }) => {
       doc.save(`DTR_${user.name}.pdf`);
     } catch (e) { 
         console.error(e); 
-        alert("PDF Error: Please ensure you have a stable connection for the logo."); 
+        alert("PDF Error: Please ensure you have a stable connection. If the logo fails to load, the PDF will be generated without it."); 
     } finally { 
         setProcessing(false); 
     }
@@ -568,7 +592,7 @@ const Attendance: React.FC<AttendanceProps> = ({ user }) => {
     const provRecord = provincialStaff ? dtrRecords.find(r => r.staffId === provincialStaff.id && r.dateString === todayStr) : null;
 
     return (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-fadeIn">
             <div className="space-y-6">
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
                     <h3 className="font-bold text-gray-700 mb-4 flex items-center"><Clock size={20} className="mr-2 text-emerald-600"/> Who is In Today? (Municipal)</h3>
@@ -627,7 +651,6 @@ const Attendance: React.FC<AttendanceProps> = ({ user }) => {
   };
 
   const renderDashboardWeekly = () => {
-     // ... weekly implementation
      const today = new Date();
      const startOfWeek = new Date(today);
      startOfWeek.setDate(today.getDate() - today.getDay() + 1); // Monday
@@ -638,7 +661,7 @@ const Attendance: React.FC<AttendanceProps> = ({ user }) => {
      });
 
      return (
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 overflow-x-auto">
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 overflow-x-auto animate-fadeIn">
             <h3 className="font-bold text-gray-700 mb-4">Weekly Summary (Mon-Fri) - Municipal Staff</h3>
             <table className="min-w-full text-sm">
                 <thead>
@@ -675,7 +698,7 @@ const Attendance: React.FC<AttendanceProps> = ({ user }) => {
 
   const renderDashboardMonthly = () => {
       return (
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 animate-fadeIn">
               <h3 className="font-bold text-gray-700 mb-4">Monthly Attendance Count ({new Date().toLocaleString('default',{month:'long'})}) - Municipal Staff</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {regularStaff.map(staff => {
@@ -772,7 +795,7 @@ const Attendance: React.FC<AttendanceProps> = ({ user }) => {
       }
 
       return (
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 animate-fadeIn">
               <div className="flex justify-between items-center mb-6">
                   <div className="flex gap-2">
                        <select value={selectedMonth} onChange={e=>setSelectedMonth(Number(e.target.value))} className="border p-2 rounded text-sm bg-white text-gray-900">
@@ -825,7 +848,7 @@ const Attendance: React.FC<AttendanceProps> = ({ user }) => {
            <div className="p-3 bg-emerald-100 text-emerald-600 rounded-lg"><Clock size={24}/></div>
            <div>
               <h1 className="text-xl font-bold text-gray-900">Attendance System</h1>
-              <p className="text-xs text-gray-500">{currentTime.toLocaleString('en-US', { weekday: 'long', month:'long', day:'numeric', hour:'numeric', minute:'numeric', hour12: true })}</p>
+              <ClockHeader />
            </div>
         </div>
         <div className="flex bg-gray-100 p-1 rounded-lg mt-4 md:mt-0">
@@ -836,10 +859,19 @@ const Attendance: React.FC<AttendanceProps> = ({ user }) => {
         </div>
       </div>
 
-      {activeTab === 'daily' && renderDashboardDaily()}
-      {activeTab === 'weekly' && renderDashboardWeekly()}
-      {activeTab === 'monthly' && renderDashboardMonthly()}
-      {activeTab === 'my_dtr' && renderMyDTR()}
+      {loading ? (
+          <div className="p-20 text-center text-gray-500">
+              <RefreshCw className="animate-spin mx-auto mb-2 text-emerald-600" size={32}/>
+              <p>Loading attendance records...</p>
+          </div>
+      ) : (
+          <>
+            {activeTab === 'daily' && renderDashboardDaily()}
+            {activeTab === 'weekly' && renderDashboardWeekly()}
+            {activeTab === 'monthly' && renderDashboardMonthly()}
+            {activeTab === 'my_dtr' && renderMyDTR()}
+          </>
+      )}
 
       {/* MODAL: LEAVE */}
       {showLeaveModal && (
