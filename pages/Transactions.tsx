@@ -4,7 +4,7 @@ import { getTransactions, saveTransaction, getVisitorLogs, getAssessments } from
 import { summarizeTransactionNotes, proofreadText } from '../services/ai';
 import { 
   ArrowRightLeft, Plus, Search, LayoutGrid, List as ListIcon, 
-  Sparkles, X, CheckCircle2, Edit3, User as UserIcon, MapPin, Printer, FileText, Link as LinkIcon,
+  Sparkles, X, CheckCircle2, Edit3, MapPin, Printer, FileText,
   Trash2, RotateCcw, AlertTriangle, MessageSquarePlus
 } from 'lucide-react';
 import { ASSESSOR_TRANSACTIONS } from '../constants';
