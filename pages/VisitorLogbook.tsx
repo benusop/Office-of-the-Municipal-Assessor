@@ -12,28 +12,44 @@ interface VisitorLogbookProps {
   user: User;
 }
 
-// --- HELPERS (Outside component for stability) ---
+// --- HELPERS ---
 
 const formatDateDisplay = (val: string) => {
   if (!val) return '';
-  try {
-    const d = new Date(val);
-    if (isNaN(d.getTime())) return val;
-    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-  } catch { return val; }
+  // Convert ISO string (2025-12-07T16:00:00.000Z) to readable Date
+  const d = new Date(val);
+  if (!isNaN(d.getTime())) {
+      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  }
+  return val;
 };
 
 const formatTimeDisplay = (val: string) => {
   if (!val) return '';
-  // If it's a full ISO/Date string, extract just the time
-  if (val.length > 15 && (val.includes('GMT') || val.includes('T') || val.includes('Mon') || val.includes('Tue'))) {
-      try {
-          const d = new Date(val);
-          if (!isNaN(d.getTime())) {
-              return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-          }
-      } catch { }
+  
+  const str = String(val).trim();
+
+  // Handle Google Sheets "1899" Epoch or full ISO strings
+  if (str.includes('T') || str.includes('1899-') || str.includes('202')) {
+      const d = new Date(str);
+      if (!isNaN(d.getTime())) {
+          return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+      }
   }
+  
+  // If it's already in 12h format "5:00 PM"
+  if (str.match(/\d{1,2}:\d{2}\s*(AM|PM)/i)) {
+      return str;
+  }
+
+  // If it's 24h format "17:00"
+  if (str.match(/^\d{1,2}:\d{2}$/)) {
+      const [h, m] = str.split(':');
+      const d = new Date();
+      d.setHours(parseInt(h), parseInt(m));
+      return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+  }
+
   return val;
 };
 
@@ -296,7 +312,10 @@ const VisitorLogbook: React.FC<VisitorLogbookProps> = ({ user }) => {
 
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 md:col-span-2 flex flex-col md:flex-row justify-between items-center gap-4">
              <div>
-                <h1 className="text-xl font-bold text-gray-900">Visitor Logbook System</h1>
+                <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                  Visitor Logbook System
+                  <span className="text-xs bg-gray-100 text-gray-500 px-2 py-1 rounded-full border">v1.2</span>
+                </h1>
                 <p className="text-gray-500 text-sm">Monitor entry/exit and visitor history</p>
              </div>
              <button 

@@ -35,11 +35,13 @@ const fetchGoogleScript = async (action: string, sheet: string, data?: any) => {
     let url = `${GOOGLE_SCRIPT_URL}`;
     const options: RequestInit = {
       redirect: "follow",
+      cache: "no-store", // CRITICAL: Forces browser/Vercel to never cache the response
     };
 
     if (action === 'read') {
       // GET Request
-      url += `?action=read&sheet=${sheet}`;
+      // CACHE BUSTER: Add _t timestamp to prevent Vercel/Browser caching
+      url += `?action=read&sheet=${sheet}&_t=${new Date().getTime()}`;
       options.method = 'GET';
     } else {
       // POST Request (Create/Update/Delete)
@@ -49,7 +51,7 @@ const fetchGoogleScript = async (action: string, sheet: string, data?: any) => {
         sheet,
         data
       });
-      // Content-Type is intentionally omitted for GAS compatibility
+      // Content-Type is intentionally omitted to avoid CORS Preflight (OPTIONS) issues with GAS
     }
 
     const response = await fetch(url, options);
