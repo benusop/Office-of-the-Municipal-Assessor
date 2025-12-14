@@ -1,4 +1,3 @@
-
 import { Assessment, User, UserRole, DTRRecord, Holiday, VisitorRecord, Transaction } from '../types';
 import { STAFF_CREDENTIALS } from '../constants';
 
@@ -26,7 +25,7 @@ const SHEET_NAMES = {
  * Generic fetch wrapper for Google Apps Script Web App
  */
 const fetchGoogleScript = async (action: string, sheet: string, data?: any) => {
-  if (!GOOGLE_SCRIPT_URL || GOOGLE_SCRIPT_URL.includes('YOUR_GOOGLE_SCRIPT_URL_HERE')) {
+  if (!GOOGLE_SCRIPT_URL) {
     console.error("Google Script URL is not configured.");
     throw new Error("API Configuration Error");
   }

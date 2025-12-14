@@ -5,7 +5,7 @@ import { summarizeTransactionNotes, proofreadText } from '../services/ai';
 import { 
   ArrowRightLeft, Plus, Search, LayoutGrid, List as ListIcon, 
   Sparkles, X, CheckCircle2, Edit3, User as UserIcon, MapPin, Printer, FileText, Link as LinkIcon,
-  Trash2, RotateCcw, AlertTriangle, MessageSquarePlus, History
+  Trash2, RotateCcw, AlertTriangle, MessageSquarePlus
 } from 'lucide-react';
 import { ASSESSOR_TRANSACTIONS } from '../constants';
 import { jsPDF } from 'jspdf';
@@ -614,7 +614,7 @@ const CreateTransactionModal: React.FC<{
 const TransactionDetailModal: React.FC<{ 
     transaction: Transaction, 
     user: User, 
-    isRecycleBin?: boolean,
+    isRecycleBin?: boolean, 
     onClose: () => void, 
     onUpdate: () => void,
     onDelete: () => void,
