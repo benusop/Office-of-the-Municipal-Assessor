@@ -100,6 +100,23 @@ const parseNumber = (val: unknown): number => {
   return 0;
 };
 
+// Helper to sanitize dates from API to YYYY-MM-DD
+const normalizeDate = (val: any): string => {
+  if (!val) return '';
+  const str = String(val);
+  // Check if ISO Date (e.g., 2024-05-20T00:00:00.000Z)
+  if (str.includes('T') || str.includes('Z')) {
+    try {
+      const d = new Date(str);
+      // Use en-CA for consistent YYYY-MM-DD format based on local time
+      return d.toLocaleDateString('en-CA');
+    } catch (e) {
+      return str;
+    }
+  }
+  return str;
+};
+
 // --- AUTH SERVICES ---
 
 export const getAllUsers = async (): Promise<User[]> => {
@@ -205,7 +222,21 @@ export const updateAssessment = async (id: string, updates: Partial<Assessment>)
 
 export const getDTRLogs = async (): Promise<DTRRecord[]> => {
   const data = await fetchGoogleScript('read', SHEET_NAMES.ATTENDANCE);
-  return Array.isArray(data) ? data : [];
+  if (!Array.isArray(data)) return [];
+  
+  return data.map((item: any) => ({
+    id: String(item.id),
+    staffId: String(item.staffId),
+    staffName: String(item.staffName),
+    // Critical: Normalize date to prevent timezone/ISO mismatches
+    dateString: normalizeDate(item.dateString), 
+    amIn: item.amIn || '',
+    amOut: item.amOut || '',
+    pmIn: item.pmIn || '',
+    pmOut: item.pmOut || '',
+    remarks: item.remarks || '',
+    isHoliday: String(item.isHoliday)
+  }));
 };
 
 export const saveDTRRecord = async (record: DTRRecord) => {
@@ -223,7 +254,15 @@ export const saveDTRRecord = async (record: DTRRecord) => {
 
 export const getHolidays = async (): Promise<Holiday[]> => {
   const data = await fetchGoogleScript('read', SHEET_NAMES.HOLIDAYS);
-  return Array.isArray(data) ? data : [];
+  if (!Array.isArray(data)) return [];
+
+  return data.map((item: any) => ({
+    id: String(item.id),
+    dateString: normalizeDate(item.dateString),
+    name: String(item.name),
+    type: item.type as any,
+    remarks: item.remarks || ''
+  }));
 };
 
 export const saveHoliday = async (holiday: Holiday) => {
