@@ -1,11 +1,10 @@
-
 {
   "name": "office-of-the-municipal-assessor-pagalungan",
   "version": "1.0.0",
   "description": "Assessment System",
   "type": "module",
   "engines": {
-    "node": ">=18.0.0"
+    "node": "20.x"
   },
   "scripts": {
     "start": "vite",

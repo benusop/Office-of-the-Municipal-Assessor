@@ -9,14 +9,14 @@ export default defineConfig(({ mode }) => {
     plugins: [react()],
     build: {
       outDir: 'dist',
-      chunkSizeWarningLimit: 1600, // Increased limit to suppress warning
+      chunkSizeWarningLimit: 2000, // Increased limit to suppress warnings for large dependencies
       rollupOptions: {
         output: {
           manualChunks: {
-            // Split vendor code into separate chunks for better caching and performance
+            // Split large libraries into separate chunks
             vendor: ['react', 'react-dom'],
-            charts: ['recharts'],
-            utils: ['jspdf', 'jspdf-autotable', 'html2canvas', 'lucide-react'],
+            ui: ['lucide-react', 'recharts'],
+            utils: ['html2canvas', 'jspdf', 'jspdf-autotable'],
             ai: ['@google/genai']
           }
         }
