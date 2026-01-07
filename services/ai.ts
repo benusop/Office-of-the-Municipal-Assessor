@@ -1,4 +1,3 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
 
 // Initialize Gemini API
@@ -15,7 +14,7 @@ export interface SummarizeResult {
  */
 export const summarizeTransactionNotes = async (rawNotes: string): Promise<SummarizeResult> => {
   try {
-    const model = 'gemini-2.5-flash';
+    const model = 'gemini-3-flash-preview';
     const prompt = `
       Analyze the following raw notes from a municipal assessor office transaction.
       1. Create a concise professional summary (max 2 sentences).
@@ -52,7 +51,7 @@ export const summarizeTransactionNotes = async (rawNotes: string): Promise<Summa
     // Fallback if AI fails
     return {
       summary: rawNotes.substring(0, 100) + "...",
-      tags: [" Manual Review Needed"]
+      tags: ["Manual Review Needed"]
     };
   }
 };
@@ -64,7 +63,7 @@ export const proofreadText = async (text: string): Promise<string> => {
   if (!text.trim()) return "";
   
   try {
-    const model = 'gemini-2.5-flash';
+    const model = 'gemini-3-flash-preview';
     const response = await ai.models.generateContent({
       model: model,
       contents: `Fix the grammar and spelling of the following text. Maintain a professional tone. Return ONLY the corrected text. Text: "${text}"`
