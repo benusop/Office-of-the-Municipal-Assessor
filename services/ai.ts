@@ -2,7 +2,9 @@ import { GoogleGenAI, Type } from "@google/genai";
 
 // Initialize Gemini API
 // API Key is strictly obtained from process.env.API_KEY as requested.
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// We add a fallback string to prevent the app from crashing on load if the key is missing in dev/Netlify.
+const apiKey = process.env.API_KEY || "MISSING_API_KEY";
+const ai = new GoogleGenAI({ apiKey });
 
 export interface SummarizeResult {
   summary: string;
@@ -13,6 +15,14 @@ export interface SummarizeResult {
  * Summarizes raw transaction notes and extracts system tags.
  */
 export const summarizeTransactionNotes = async (rawNotes: string): Promise<SummarizeResult> => {
+  if (apiKey === "MISSING_API_KEY") {
+    console.error("API Key is missing. Please configure API_KEY in your environment variables.");
+    return {
+      summary: "AI Service Unavailable (Missing API Key)",
+      tags: ["System Error"]
+    };
+  }
+
   try {
     const model = 'gemini-3-flash-preview';
     const prompt = `
@@ -61,6 +71,7 @@ export const summarizeTransactionNotes = async (rawNotes: string): Promise<Summa
  */
 export const proofreadText = async (text: string): Promise<string> => {
   if (!text.trim()) return "";
+  if (apiKey === "MISSING_API_KEY") return text;
   
   try {
     const model = 'gemini-3-flash-preview';
